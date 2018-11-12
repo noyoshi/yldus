@@ -51,9 +51,12 @@ YLDME_PRESETS   = [
     ('cse-40175-fa18'   , 'https://www3.nd.edu/~pbui/teaching/cse.40175.fa18/', 'url'),
     ('pbc-su17'         , 'https://www3.nd.edu/~pbui/teaching/pbc.su17/'      , 'url'),
 ]
-YLDME_URL       = 'https://yld.me'
-YLDME_PORT      = 9515
-YLDME_ADDRESS   = '127.0.0.1'
+# YLDME_URL       = 'https://yld.me'
+YLDME_URL       = '0.0.0.0:5000'
+# YLDME_PORT      = 9515
+YLDME_PORT      = 5000 
+# YLDME_ADDRESS   = '127.0.0.1'
+YLDME_ADDRESS   = '0.0.0.0'
 YLDME_ALPHABET  = string.ascii_letters + string.digits
 YLDME_MAX_TRIES = 10
 YLDME_ASSETS    = os.path.join(os.path.dirname(__file__), 'assets')
