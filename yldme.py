@@ -51,6 +51,8 @@ YLDME_PRESETS   = [
     ('cse-40175-fa18'   , 'https://www3.nd.edu/~pbui/teaching/cse.40175.fa18/', 'url'),
     ('pbc-su17'         , 'https://www3.nd.edu/~pbui/teaching/pbc.su17/'      , 'url'),
 ]
+
+# Gotta change these things when running in docker
 # YLDME_URL       = 'https://yld.me'
 YLDME_URL       = '0.0.0.0:5000'
 # YLDME_PORT      = 9515
