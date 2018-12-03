@@ -11,7 +11,7 @@ from random import randint
 from subprocess import PIPE
 
 
-NUM_REQUESTS = 100
+NUM_REQUESTS = 1
 NUM_TRIALS   = 5
 REQUESTS_URL = 'http://35.188.132.194'
 #REQUESTS_URL = 'https://yld.me'
@@ -67,7 +67,7 @@ def create_file(i):
     with open(filename, 'w') as f:
         for _ in range(300000):
            f.write(chr(randint(0,255))) # Write a random byte
-    print('wrote to test/test_file_' + i)
+    print('wrote to', filename)
     return filename
 
 
