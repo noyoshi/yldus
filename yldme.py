@@ -7,10 +7,11 @@ import logging
 import os
 import random
 import socket
-import pymysql 
+import pymysql
 import string
 import subprocess
 import sys
+import magic
 import time
 
 import tornado.ioloop
@@ -24,6 +25,9 @@ import pygments.styles
 import pygments.util
 
 from secrets import DATABASE_CREDS
+from google.cloud import storage
+from google.auth import compute_engine
+
 
 # Configuration ----------------------------------------------------------------
 
@@ -58,14 +62,14 @@ YLDME_PRESETS   = [
 # YLDME_URL       = 'https://yld.me'
 YLDME_URL       = '0.0.0.0:5000'
 # YLDME_PORT      = 9515
-YLDME_PORT      = 5000 
+YLDME_PORT      = 5000
 # YLDME_ADDRESS   = '127.0.0.1'
 YLDME_ADDRESS   = '0.0.0.0'
 YLDME_ALPHABET  = string.ascii_letters + string.digits
 YLDME_MAX_TRIES = 10
 YLDME_ASSETS    = os.path.join(os.path.dirname(__file__), 'assets')
 YLDME_STYLES    = os.path.join(YLDME_ASSETS, 'css', 'pygments')
-YLDME_UPLOADS   = os.path.join(os.path.dirname(__file__), 'uploads')
+# YLDME_UPLOADS   = os.path.join(os.path.dirname(__file__), 'uploads')
 
 # Constants --------------------------------------------------------------------
 
@@ -73,11 +77,25 @@ TRUE_STRINGS = ('1', 'true', 'on', 'yes')
 
 # Utilities --------------------------------------------------------------------
 
+def upload_blob(source, destination_blob_name, bucket_name="yldme-storage"):
+    """Uploads a file to the bucket."""
+    storage_client = storage.Client()
+    bucket = storage_client.get_bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+    blob.upload_from_string(source)
+
+def download_blob(destination_blob_name, bucket_name="yldme-storage"):
+    """Uploads a file to the bucket."""
+    storage_client = storage.Client()
+    bucket = storage_client.get_bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+    data = blob.download_as_string()
+    return data
+
 def make_parent_directories(path):
     dirname = os.path.dirname(path)
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-
 
 def integer_to_identifier(integer, alphabet=YLDME_ALPHABET):
     ''' Returns a string given an integer identifier '''
@@ -93,18 +111,11 @@ def integer_to_identifier(integer, alphabet=YLDME_ALPHABET):
     identifier = alphabet[number] + identifier
     return identifier
 
-
 def checksum(data):
     return hashlib.sha1(data).hexdigest()
 
-
-def determine_mimetype(path):
-    try:
-        result = subprocess.check_output(['file', '--mime-type', path])
-    except subprocess.CalledProcessError:
-        result = '{}: text/plain'.format(path)
-
-    return result.decode('utf8').split(':', 1)[-1].strip()
+def determine_mimetype(blob):
+    return magic.from_buffer(blob, mime=True)
 
 # Database ---------------------------------------------------------------------
 
@@ -150,7 +161,7 @@ class Database(object):
         for name, value, type in YLDME_PRESETS:
             try:
                 self.add(name, value, type)
-            except: 
+            except:
                 pass
 
     def add(self, name, value, type=None):
@@ -167,7 +178,7 @@ class Database(object):
             curs.execute(Database.SQL_INSERT_DATA.format(*data))
 
     def get(self, name):
-        # NOTE make sure output is good 
+        # NOTE make sure output is good
         with self.conn:
             curs = self.conn.cursor()
             curs.execute(Database.SQL_SELECT_NAME.format(name))
@@ -180,14 +191,14 @@ class Database(object):
             curs.execute(Database.SQL_UPDATE_DATA.format(data.hits + 1, int(time.time()), data.id))
 
     def lookup(self, value):
-        # NOTE make sure output is good 
+        # NOTE make sure output is good
         with self.conn:
             curs = self.conn.cursor()
             curs.execute(Database.SQL_SELECT_VALUE.format(value))
             return parse_db_row(curs.fetchone())
 
     def count(self):
-        # NOTE make sure this works 
+        # NOTE make sure this works
         with self.conn:
             curs = self.conn.cursor()
             curs.execute(Database.SQL_SELECT_COUNT)
@@ -217,9 +228,8 @@ class YldMeHandler(tornado.web.RequestHandler):
         self.redirect(data.value)
 
     def _get_paste(self, name, data):
-        file_path = os.path.join(YLDME_UPLOADS, name)
-        file_data = open(file_path, 'rb').read()
-        file_mime = determine_mimetype(file_path)
+        file_data = download_blob(name)
+        file_mime = determine_mimetype(file_data)
 
         if self.get_argument('raw', '').lower() in TRUE_STRINGS:
             self.set_header('Content-Type', file_mime)
@@ -264,9 +274,9 @@ class YldMeHandler(tornado.web.RequestHandler):
             value_hash = checksum(value)
         elif type == 'metrics':
             self.write('metric check')
-            return
+            return None
         else:
-            raise tornado.web.HTTPError(405, 'Could not post to {}'.format(type)
+            raise tornado.web.HTTPError(405, 'Could not post to {}'.format(type))
         data  = self.application.database.lookup(value_hash)
         tries = 0
 
@@ -275,10 +285,9 @@ class YldMeHandler(tornado.web.RequestHandler):
 
             try:
                 name = self.application.generate_name()
-                if type != 'url':
-                    with open(os.path.join(YLDME_UPLOADS, name), 'wb+') as fs:
-                        fs.write(value)
                 self.application.database.add(name, value_hash, type)
+                if type != 'url':
+                    upload_blob(value, name)
                 data = self.application.database.get(name)
             except Exception as e:
                 print('adding failed')

@@ -1,0 +1,23 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: yldme-deploy 
+  labels:
+    type: yldme-label 
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate    
+  template:
+    metadata:
+      labels:
+        type: yldme-app
+        tier: frontend
+        version: v13
+    spec:
+      containers:
+      - name: frontend
+        image: gcr.io/yldus-1/yldme-app:v13
+        ports:
+          - containerPort: 5000 
