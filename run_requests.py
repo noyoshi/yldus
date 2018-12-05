@@ -40,9 +40,12 @@ def run_requests(fcn):
     for i in range(NUM_REQUESTS):
         create_file(i)
     pool = ThreadPool(min(1000, NUM_REQUESTS))
+    tot = 0
     for t, status in pool.imap(fcn, range(NUM_REQUESTS)):
         print('time to serve: {:.4f}\tstatus: {}'.format(t , status))
-    #print('total elapsed time: {:.4f}\n'.format(elapsed_time))
+        tot += t
+    elapsed_time = tot / NUM_REQUESTS
+    print('total elapsed time: {:.4f}\n'.format(elapsed_time))
 
 
 def request_fcn(i):
@@ -78,9 +81,9 @@ if __name__ == '__main__':
         if arg == '--url':
             REQUESTS_URL = args.pop(0)
         if arg == '--num_requests':
-            NUM_REQUESTS = args.pop(0)
+            NUM_REQUESTS = int(args.pop(0))
         if arg == '--num_trials':
-            NUM_TRIALS = args.pop(0)
+            NUM_TRIALS = int(args.pop(0))
     #run_trials()
     #t = upload_fcn(0, 'run_requests.py')
     t = run_requests(upload_fcn)

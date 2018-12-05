@@ -1,2 +1,4 @@
 uploads
+secrets.py
+db_secrets.json
 *.pyc

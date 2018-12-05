@@ -7,7 +7,7 @@ import logging
 import os
 import random
 import socket
-import sqlite3
+import pymysql 
 import string
 import subprocess
 import sys
@@ -22,6 +22,8 @@ import pygments.lexers
 import pygments.formatters
 import pygments.styles
 import pygments.util
+
+from secrets import DATABASE_CREDS
 
 # Configuration ----------------------------------------------------------------
 
@@ -109,41 +111,37 @@ def determine_mimetype(path):
 YldMeTupleFields = 'id ctime mtime hits type name value'.split()
 YldMeTuple       = collections.namedtuple('YldMeTuple', YldMeTupleFields)
 
-def DatabaseRowFactory(cursor, row):
-    if len(row) == len(YldMeTupleFields):
+def parse_db_row(row):
+    if row != None and len(row) == len(YldMeTupleFields):
         return YldMeTuple(*row)
     else:
         return row
 
 class Database(object):
 
-    DEFAULT_PATH = os.path.expanduser('~/.config/yldme/db')
-
     SQL_CREATE_TABLE = '''
     CREATE TABLE IF NOT EXISTS YldMe (
-        id      INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        ctime   INTEGER NOT NULL,
-        mtime   INTEGER NOT NULL,
-        hits    INTEGER NOT NULL DEFAULT 0,
-        type    TEXT NOT NULL CHECK (type IN ('paste','url')) DEFAULT 'url',
-        name    TEXT NOT NULL UNIQUE,
-        value   TEXT NOT NULL UNIQUE
-    )
+        id      INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+        ctime   INT NOT NULL,
+        mtime   INT NOT NULL,
+        hits    INT NOT NULL DEFAULT 0,
+        type    varchar(255) NOT NULL DEFAULT 'url',
+        name    varchar(255) NOT NULL UNIQUE,
+        value   varchar(255) NOT NULL UNIQUE,
+        CONSTRAINT chk_type CHECK (type='url' OR type='paste')
+    );
     '''
-    SQL_INSERT_DATA   = 'INSERT INTO YldMe (ctime, mtime, type, name, value) VALUES (?, ?, ?, ?, ?)'
-    SQL_UPDATE_DATA   = 'UPDATE YldMe SET hits=?,mtime=? WHERE id=?'
-    SQL_SELECT_NAME   = 'SELECT * FROM YldMe WHERE name = ?'
-    SQL_SELECT_VALUE  = 'SELECT * FROM YldMe WHERE value = ?'
-    SQL_SELECT_COUNT  = 'SELECT Count(*) FROM YldMe'
+    SQL_INSERT_DATA   = "INSERT INTO YldMe (ctime, mtime, type, name, value) VALUES ({}, {}, '{}', '{}', '{}')"
+    SQL_UPDATE_DATA   = 'UPDATE YldMe SET hits={},mtime={} WHERE id={}'
+    SQL_SELECT_NAME   = "SELECT * FROM YldMe WHERE name='{}'"
+    SQL_SELECT_VALUE  = "SELECT * FROM YldMe WHERE value='{}'"
+    SQL_SELECT_COUNT  = 'SELECT COUNT(*) FROM YldMe;'
 
     def __init__(self, path=None):
-        self.path = path or Database.DEFAULT_PATH
-
-        if not os.path.exists(self.path):
-            make_parent_directories(self.path)
-
-        self.conn = sqlite3.connect(self.path)
-        self.conn.row_factory = DatabaseRowFactory
+        # NOTE make sure that this is not publically visible
+        self.conn = pymysql.connect(*DATABASE_CREDS)
+        # NOTE get rid of this - all it does is parse the outputs of the queries
+        # and save them in a custom data structure? (names tuple)
 
         with self.conn:
             curs = self.conn.cursor()
@@ -152,7 +150,7 @@ class Database(object):
         for name, value, type in YLDME_PRESETS:
             try:
                 self.add(name, value, type)
-            except sqlite3.IntegrityError:
+            except: 
                 pass
 
     def add(self, name, value, type=None):
@@ -166,31 +164,35 @@ class Database(object):
                 value,
             )
             curs = self.conn.cursor()
-            curs.execute(Database.SQL_INSERT_DATA, data)
+            curs.execute(Database.SQL_INSERT_DATA.format(*data))
 
     def get(self, name):
+        # NOTE make sure output is good 
         with self.conn:
             curs = self.conn.cursor()
-            curs.execute(Database.SQL_SELECT_NAME, (name,))
-            return curs.fetchone()
+            curs.execute(Database.SQL_SELECT_NAME.format(name))
+            return parse_db_row(curs.fetchone())
 
     def hit(self, name):
         data = self.get(name)
         with self.conn:
             curs = self.conn.cursor()
-            curs.execute(Database.SQL_UPDATE_DATA, (data.hits + 1, int(time.time()), data.id))
+            curs.execute(Database.SQL_UPDATE_DATA.format(data.hits + 1, int(time.time()), data.id))
 
     def lookup(self, value):
+        # NOTE make sure output is good 
         with self.conn:
             curs = self.conn.cursor()
-            curs.execute(Database.SQL_SELECT_VALUE, (value,))
-            return curs.fetchone()
+            curs.execute(Database.SQL_SELECT_VALUE.format(value))
+            return parse_db_row(curs.fetchone())
 
     def count(self):
+        # NOTE make sure this works 
         with self.conn:
             curs = self.conn.cursor()
             curs.execute(Database.SQL_SELECT_COUNT)
-            return int(curs.fetchone()[0])
+            # Returning 0 gives an error
+            return  int(curs.fetchone()[0]) + 1
 
 # Handlers ---------------------------------------------------------------------
 
@@ -258,8 +260,13 @@ class YldMeHandler(tornado.web.RequestHandler):
         value = self.request.body
         if type == 'url':
             value_hash = value
-        else:
+        elif type == 'paste':
             value_hash = checksum(value)
+        elif type == 'metrics':
+            self.write('metric check')
+            return
+        else:
+            raise tornado.web.HTTPError(405, 'Could not post to {}'.format(type)
         data  = self.application.database.lookup(value_hash)
         tries = 0
 
@@ -268,14 +275,14 @@ class YldMeHandler(tornado.web.RequestHandler):
 
             try:
                 name = self.application.generate_name()
-                self.application.database.add(name, value_hash, type)
                 if type != 'url':
                     with open(os.path.join(YLDME_UPLOADS, name), 'wb+') as fs:
                         fs.write(value)
+                self.application.database.add(name, value_hash, type)
                 data = self.application.database.get(name)
-            except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
+            except Exception as e:
+                print('adding failed')
                 self.application.logger.warn(e)
-                self.application.logger.info('name: %s', name)
                 continue
 
         if tries >= YLDME_MAX_TRIES:
