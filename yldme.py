@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# Original Author: Peter Bui
+# Modified by Catalina Vajiac and Noah Yoshida
+
 import collections
 import glob
 import hashlib
@@ -27,7 +30,6 @@ import pygments.util
 from secrets import DATABASE_CREDS
 from google.cloud import storage
 from google.auth import compute_engine
-
 
 # Configuration ----------------------------------------------------------------
 
@@ -58,18 +60,13 @@ YLDME_PRESETS   = [
     ('pbc-su17'         , 'https://www3.nd.edu/~pbui/teaching/pbc.su17/'      , 'url'),
 ]
 
-# Gotta change these things when running in docker
-# YLDME_URL       = 'https://yld.me'
-YLDME_URL       = '0.0.0.0:5000'
-# YLDME_PORT      = 9515
+YLDME_URL       = 'http://yld.us'
 YLDME_PORT      = 5000
-# YLDME_ADDRESS   = '127.0.0.1'
 YLDME_ADDRESS   = '0.0.0.0'
 YLDME_ALPHABET  = string.ascii_letters + string.digits
 YLDME_MAX_TRIES = 10
 YLDME_ASSETS    = os.path.join(os.path.dirname(__file__), 'assets')
 YLDME_STYLES    = os.path.join(YLDME_ASSETS, 'css', 'pygments')
-# YLDME_UPLOADS   = os.path.join(os.path.dirname(__file__), 'uploads')
 
 # Constants --------------------------------------------------------------------
 
@@ -91,11 +88,6 @@ def download_blob(destination_blob_name, bucket_name="yldme-storage"):
     blob = bucket.blob(destination_blob_name)
     data = blob.download_as_string()
     return data
-
-def make_parent_directories(path):
-    dirname = os.path.dirname(path)
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
 
 def integer_to_identifier(integer, alphabet=YLDME_ALPHABET):
     ''' Returns a string given an integer identifier '''
@@ -149,10 +141,7 @@ class Database(object):
     SQL_SELECT_COUNT  = 'SELECT COUNT(*) FROM YldMe;'
 
     def __init__(self, path=None):
-        # NOTE make sure that this is not publically visible
         self.conn = pymysql.connect(*DATABASE_CREDS)
-        # NOTE get rid of this - all it does is parse the outputs of the queries
-        # and save them in a custom data structure? (names tuple)
 
         with self.conn:
             curs = self.conn.cursor()
@@ -178,7 +167,6 @@ class Database(object):
             curs.execute(Database.SQL_INSERT_DATA.format(*data))
 
     def get(self, name):
-        # NOTE make sure output is good
         with self.conn:
             curs = self.conn.cursor()
             curs.execute(Database.SQL_SELECT_NAME.format(name))
@@ -191,18 +179,15 @@ class Database(object):
             curs.execute(Database.SQL_UPDATE_DATA.format(data.hits + 1, int(time.time()), data.id))
 
     def lookup(self, value):
-        # NOTE make sure output is good
         with self.conn:
             curs = self.conn.cursor()
             curs.execute(Database.SQL_SELECT_VALUE.format(value))
             return parse_db_row(curs.fetchone())
 
     def count(self):
-        # NOTE make sure this works
         with self.conn:
             curs = self.conn.cursor()
             curs.execute(Database.SQL_SELECT_COUNT)
-            # Returning 0 gives an error
             return  int(curs.fetchone()[0]) + 1
 
 # Handlers ---------------------------------------------------------------------

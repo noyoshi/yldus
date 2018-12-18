@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: yldme-balance
+  labels:
+    app: yldme-balance
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}' # Creates an NEG after an Ingress is created
+spec:
+  type: NodePort
+  selector:
+    run: yldme-app
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 5000 
+    name: yldme-port
+
+
